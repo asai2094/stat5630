@@ -1,0 +1,134 @@
+---
+title: "finalproject_stat5630"
+author: "Ananya Sai"
+date: "2025-05-05"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Final Project Code
+
+```{r}
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(e1071)
+library(pROC)
+library(corrplot)
+library(ggpubr)
+```
+
+# Load datasets
+```{r}
+balanced_df <- read.csv('diabetes_binary_5050split_health_indicators_BRFSS2015.csv')
+imbalanced_df <- read.csv('diabetes_binary_health_indicators_BRFSS2015.csv')
+multiclass_df <- read.csv('diabetes copy.csv')
+multiclass_df$Diabetes <- factor(multiclass_df$Diabetes)
+```
+
+# Phase 1: Exploratory Data Analysis (EDA)
+```{r}
+str(balanced_df)
+summary(balanced_df)
+```
+```{r}
+sum(is.na(balanced_df))
+correlation_matrix <- cor(balanced_df)
+corrplot(correlation_matrix, method = 'color', type = 'upper', tl.cex = 0.7)
+prop.table(table(imbalanced_df$Diabetes_binary))
+```
+Targeted Distribution:
+```{r}
+ggplot(balanced_df, aes(x = factor(Diabetes_binary))) +
+  geom_bar(fill = "#69b3a2") +
+  labs(title = "Distribution of Diabetes Status", x = "Diabetes Status", y = "Count")
+```
+```{r}
+num_vars <- balanced_df %>% select(where(is.numeric)) %>% select(-Diabetes_binary)
+df_long <- pivot_longer(num_vars, cols = everything(), names_to = "Variable", values_to = "Value")
+
+ggplot(df_long, aes(x = Value)) +
+  geom_density(fill = "skyblue", alpha = 0.5) +
+  facet_wrap(~ Variable, scales = "free") +
+  labs(title = "Distribution of Numeric Variables")
+```
+```{r}
+for (var in names(num_vars)) {
+  p <- ggplot(balanced_df, aes(x = factor(Diabetes_binary), y = .data[[var]])) +
+    geom_boxplot(fill = "#fdae61") +
+    labs(title = paste("Boxplot of", var, "by Diabetes Status"),
+         x = "Diabetes Status", y = var)
+  print(p)
+}
+```
+```{r}
+ggboxplot(balanced_df, x = "Diabetes_binary", y = "BMI", color = "Diabetes_binary",
+          palette = "jco", add = "jitter")
+```
+# Phase 2: Feature Selection
+```{r}
+set.seed(123)
+rf_for_importance <- randomForest(as.factor(Diabetes_binary) ~ ., data = balanced_df, importance = TRUE)
+importance_scores <- importance(rf_for_importance)
+print(importance_scores)
+varImpPlot(rf_for_importance)
+```
+
+```{r}
+control <- rfeControl(functions = rfFuncs, method = "cv", number = 5)
+results_rfe <- rfe(balanced_df[, -1], as.factor(balanced_df$Diabetes_binary), sizes = c(5, 10, 15, 20), rfeControl = control)
+print(results_rfe)
+predictors(results_rfe)
+```
+
+## Phase 3: Model Evaluation 
+
+```{r}
+train_control <- trainControl(method = "cv", number = 5)
+
+# Logistic Regression
+log_model <- train(as.factor(Diabetes_binary) ~ ., data = balanced_df, method = 'glm', family = binomial, trControl = train_control)
+log_preds <- predict(log_model, balanced_df)
+
+# Decision Tree
+tree_model <- train(as.factor(Diabetes_binary) ~ ., data = balanced_df, method = 'rpart', trControl = train_control)
+tree_preds <- predict(tree_model, balanced_df)
+
+# Random Forest
+rf_model <- train(as.factor(Diabetes_binary) ~ ., data = balanced_df, method = 'rf', trControl = train_control)
+rf_preds <- predict(rf_model, balanced_df)
+
+# SVM
+svm_model <- train(as.factor(Diabetes_binary) ~ ., data = balanced_df, method = 'svmRadial', trControl = train_control)
+svm_preds <- predict(svm_model, balanced_df)
+
+# Evaluation Metrics
+confusionMatrix(log_preds, as.factor(balanced_df$Diabetes_binary))
+confusionMatrix(tree_preds, as.factor(balanced_df$Diabetes_binary))
+confusionMatrix(rf_preds, as.factor(balanced_df$Diabetes_binary))
+confusionMatrix(svm_preds, as.factor(balanced_df$Diabetes_binary))
+
+# ROC Curves
+log_roc <- roc(balanced_df$Diabetes_binary, as.numeric(log_preds))
+rf_roc <- roc(balanced_df$Diabetes_binary, as.numeric(rf_preds))
+plot(log_roc, col = "blue")
+plot(rf_roc, col = "green", add = TRUE)
+legend("bottomright", legend = c("Logistic Regression", "Random Forest"), col = c("blue", "green"), lwd = 2)
+```
+# hyperparam tuning for the best models: random forest and svm
+```{r}
+tune_rf <- train(as.factor(Diabetes_binary) ~ ., data = balanced_df, method = "rf",
+                 tuneGrid = expand.grid(mtry = c(2, 4, 6, 8)),
+                 trControl = trainControl(method = "cv", number = 5))
+print(tune_rf)
+```
+```{r}
+library(doParallel)
+registerDoParallel(cores = 4)
+
+
+```
+
