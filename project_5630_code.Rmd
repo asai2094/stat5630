@@ -1,0 +1,455 @@
+---
+title: "project_5630_code"
+author: "Ananya Sai"
+date: "2025-04-16"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Preprocessing
+
+```{r}
+df <- read.csv("diabetes copy.csv")
+```
+
+```{r}
+head(df)
+```
+```{r}
+str(df)
+```
+```{r}
+summary(df)
+```
+```{r}
+library(tidyverse)
+
+df$Diabetes_binary <- ifelse(df$Diabetes_012 == 2, 1, 0)
+df$Sex <- factor(df$Sex, levels = c(0, 1), labels = c("Female", "Male"))
+age_bins <- c("18-24", "25-29", "30-34", "35-39", "40-44", 
+                "45-49", "50-54", "55-59", "60-64", "65-69", 
+                "70-74", "75-79", "80+")
+df$AgeGroup <- factor(age_bins[df$Age], levels = age_bins)
+df$BMI_Category <- cut(df$BMI,breaks = c(0, 18.5, 24.9, 29.9, 100),labels = c("Underweight", "Normal", "Overweight", "Obese"))
+df$GenHlthCat <- factor(df$GenHlth,levels = 1:5,labels = c("Excellent", "Very Good", "Good", "Fair", "Poor"))
+df$PhysHlthCat <- cut(df$PhysHlth,breaks = c(-1, 0, 10, 20, 30),labels = c("None", "Mild", "Moderate", "Severe"))
+df$MentHlthCat <- cut(df$MentHlth,breaks = c(-1, 0, 10, 20, 30),labels = c("None", "Mild", "Moderate", "Severe"))
+```
+```{r}
+str(df)
+```
+
+#Visualization 1: Diabetes Prevalence by Age Group and Sex
+```{r}
+library(ggplot2)
+
+ggplot(df, aes(x = AgeGroup, fill = factor(Diabetes_binary))) +
+  geom_bar(position = "fill") +
+  facet_wrap(~Sex) +
+  labs(
+    title = "Proportion of Diabetes Cases by Age Group and Sex",
+    x = "Age Group",
+    y = "Proportion",
+    fill = "Diabetes"
+  ) +
+  scale_fill_manual(values = c("0" = "#a1c9f4", "1" = "#ff6961"),
+                    labels = c("No Diabetes", "Diabetes")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+## Visualization 2
+```{r}
+df$BMI_Category <- cut(df$BMI,
+                       breaks = c(0, 18.5, 24.9, 29.9, 100),
+                       labels = c("Underweight", "Normal", "Overweight", "Obese"))
+
+ggplot(df, aes(x = BMI, fill = factor(Diabetes_binary))) +
+  geom_density(alpha = 0.5) +
+  labs(
+    title = "BMI Distribution by Diabetes Status",
+    x = "BMI",
+    y = "Density",
+    fill = "Diabetes Status"
+  ) +
+  scale_fill_manual(
+    values = c("0" = "#a1c9f4", "1" = "#ff6961"),
+    labels = c("No Diabetes", "Diabetes")
+  ) +
+  theme_minimal() +
+  guides(fill = guide_legend(
+    title = "Diabetes Status",
+    override.aes = list(alpha = 1)
+  )) +
+  annotate("text", x = 90, y = 0.105, hjust = 1, vjust = 1, size = 3.2, fontface = "bold",
+           label = "BMI Categories:") +
+  annotate("text", x = 90, y = 0.098, hjust = 1, size = 3,
+           label = "• Underweight: <18.5") +
+  annotate("text", x = 90, y = 0.091, hjust = 1, size = 3,
+           label = "• Normal: 18.5–24.9") +
+  annotate("text", x = 90, y = 0.084, hjust = 1, size = 3,
+           label = "• Overweight: 25–29.9") +
+  annotate("text", x = 90, y = 0.077, hjust = 1, size = 3,
+           label = "• Obese: 30+") 
+```
+
+##Visualization 3: Log Regression
+```{r}
+features <- df %>%
+  select(Diabetes_binary, HighBP, HighChol, CholCheck, BMI, Smoker, Stroke,
+         HeartDiseaseorAttack, PhysActivity, Fruits, Veggies, HvyAlcoholConsump,
+         AnyHealthcare, NoDocbcCost, GenHlth, MentHlth, PhysHlth, DiffWalk,
+         Sex, Age, Education, Income)
+
+model <- glm(Diabetes_binary ~ ., data = features, family = "binomial")
+
+library(broom)
+coef_df <- tidy(model) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(term = reorder(term, estimate))
+
+ggplot(coef_df, aes(x = term, y = estimate)) +
+  geom_col(fill = "#69b3a2") +
+  coord_flip() +
+  labs(
+    title = "Feature Importance from Logistic Regression",
+    x = "Feature",
+    y = "Coefficient Estimate"
+  ) +
+  theme_minimal()
+```
+
+#Visualization 4
+```{r}
+library(plotly)
+
+set.seed(42)
+plot_data <- df[sample(nrow(df), 1000), ] #chatgpt to help section this
+
+plot_ly(data = plot_data,
+        x = ~BMI,
+        y = ~Age,
+        z = ~GenHlth,
+        color = ~factor(Diabetes_binary, labels = c("No Diabetes", "Has Diabetes")),
+        colors = c("#a1c9f4", "#ff6961"),
+        type = "scatter3d",
+        mode = "markers") %>%
+  layout(
+    title = "3D Risk Profile: BMI, Age, and General Health",
+    scene = list(
+      xaxis = list(title = "BMI"),
+      yaxis = list(title = "Age Group"),
+      zaxis = list(title = "General Health")
+    ),
+    legend = list(title = list(text = "Diabetes Status"))
+  )
+```
+
+## Visualizaton 5 - bar graph
+
+
+```{r}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+
+ui <- fluidPage(
+  titlePanel("Diabetes Rates Based on Highly Correlated Risk Factors"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      radioButtons("bp", "High Blood Pressure:", choices = c("0", "1")),
+      checkboxGroupInput("chol", "Cholesterol Check:", choices = c("0", "1"), selected = c("0", "1")),
+      selectInput("genhlth", "General Health Rating:", choices = levels(df$GenHlthCat)),
+      HTML("<b>Note:</b> Slider groups 1 = 18-24, 2 = 25-29, ..., 13 = 80+."),
+      sliderInput("age", "Select Age Range:", min = min(df$Age), max = max(df$Age), value = c(min(df$Age), max(df$Age))),
+      selectInput("sex", "Sex:", choices = c("Male", "Female", "Both")),
+      selectInput("facet_by", "Facet By:", choices = c("BMI_Category", "AgeGroup", "Income", "Education"))
+    ),
+    
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Proportion Plot", plotOutput("riskPlot")),
+        tabPanel("Count Plot", plotOutput("countPlot")),
+        tabPanel("Diabetes Rate Summary", verbatimTextOutput("rateText")),
+        tabPanel("Grouped Summary Table", tableOutput("summaryTable"))
+      )
+    )
+  )
+)
+
+server <- function(input, output) {
+  filtered_data <- reactive({
+    data <- df %>%
+      filter(
+        HighBP == as.numeric(input$bp),
+        CholCheck %in% as.numeric(input$chol),
+        GenHlthCat == input$genhlth,
+        Age >= input$age[1],
+        Age <= input$age[2]
+      )
+    if (input$sex != "Both") {
+      data <- data %>% filter(Sex == input$sex)
+    }
+    data
+  })
+  
+  output$riskPlot <- renderPlot({
+    ggplot(filtered_data(), aes(x = .data[[input$facet_by]], fill = factor(Diabetes_binary))) +
+      geom_bar(position = "fill") +
+      labs(
+        title = "Diabetes Proportion by Selected Facet",
+        x = input$facet_by,
+        y = "Proportion",
+        fill = "Diabetes Status"
+      ) +
+      scale_fill_manual(values = c("0" = "#a1c9f4", "1" = "#ff6961"),
+                        labels = c("No Diabetes", "Diabetes")) +
+      theme_minimal()
+  })
+  
+  output$countPlot <- renderPlot({
+    ggplot(filtered_data(), aes(x = .data[[input$facet_by]], fill = factor(Diabetes_binary))) +
+      geom_bar(position = "stack") +
+      labs(
+        title = "Diabetes Count by Selected Facet",
+        x = input$facet_by,
+        y = "Count",
+        fill = "Diabetes Status"
+      ) +
+      scale_fill_manual(values = c("0" = "#a1c9f4", "1" = "#ff6961"),
+                        labels = c("No Diabetes", "Diabetes")) +
+      theme_minimal()
+  })
+  
+  output$rateText <- renderPrint({
+    rate <- mean(filtered_data()$Diabetes_binary, na.rm = TRUE)
+    paste("Average Diabetes Rate for Selected Filters:", round(rate * 100, 1), "%")
+  })
+  
+  output$summaryTable <- renderTable({
+    filtered_data() %>%
+      group_by(.data[[input$facet_by]]) %>%
+      summarise(
+        Count = n(),
+        DiabetesRate = round(mean(Diabetes_binary) * 100, 1)
+      )
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+## Visualization 6:
+
+```{r}
+library(plotly)
+library(dplyr)
+
+scatter_data <- df %>%
+  filter(Sex == "Male", !is.na(GenHlthCat), !is.na(AgeGroup)) %>%
+  group_by(AgeGroup, GenHlthCat, HvyAlcoholConsump) %>%
+  summarise(DiabetesRate = mean(Diabetes_binary), .groups = "drop") %>%
+  mutate(
+    AlcoholUse = ifelse(HvyAlcoholConsump == 1, "Heavy Drinker", "Not Heavy Drinker")
+  )
+
+scatter_data$GenHlthCat <- factor(
+  scatter_data$GenHlthCat,
+  levels = c("Poor", "Fair", "Good", "Very Good", "Excellent")
+)
+
+color_map <- c("Not Heavy Drinker" = "#a1c9f4", "Heavy Drinker" = "#ff6961")
+
+plot_ly(
+  data = scatter_data,
+  x = ~GenHlthCat,
+  y = ~DiabetesRate,
+  frame = ~AgeGroup,
+  color = ~AlcoholUse,
+  colors = color_map,
+  type = "scatter",
+  mode = "markers",
+  marker = list(
+    size = 20,
+    line = list(
+      width = 2,
+      color = "black"
+    )
+  ),
+  text = ~paste0(
+    "<b>Health:</b> ", GenHlthCat, "<br>",
+    "<b>Alcohol:</b> ", AlcoholUse, "<br>",
+    "<b>Diabetes Rate:</b> ", round(DiabetesRate * 100, 1), "%"
+  ),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = list(
+      text = "<b>Diabetes Risk by General Health & Alcohol Use (Males Only)</b>",
+      font = list(size = 20, family = "Helvetica"),
+      y = 0.9  
+    ),
+    margin = list(t = 80),  
+    xaxis = list(
+      title = "General Health",
+      tickfont = list(size = 12),
+      titlefont = list(size = 14)
+    ),
+    yaxis = list(
+      title = "Diabetes Rate (%)",
+      tickformat = ".1%",  
+      tickfont = list(size = 12),
+      titlefont = list(size = 14),
+      automargin = TRUE 
+    ),
+    legend = list(
+      title = list(text = "<b>Alcohol Use</b>"),
+      font = list(size = 12)
+    )
+  )
+```
+
+## Visualization 7: 
+
+
+```{r}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+
+age_levels <- levels(df$AgeGroup)
+
+ui <- fluidPage(
+  titlePanel("Do Stress & Physical Health Affect Diabetes Risk?"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("mental", "Mental Health Severity:", choices = levels(df$MentHlthCat)),
+      selectInput("physical", "Physical Health Severity:", choices = levels(df$PhysHlthCat)),
+      selectInput("sex", "Sex:", choices = c("Male", "Female", "Both")),
+      
+      sliderInput("ageBracketRange", 
+                  "Select Age Range:", 
+                  min = 1, max = length(age_levels), value = c(1, length(age_levels)), step = 1),
+      helpText("Bracket 1 = 18-24, 2 = 25-29, ..., 13 = 80+"),
+      
+      checkboxGroupInput("diab_status", "Include Diabetes Status:",
+                         choices = c("Has Diabetes", "No Diabetes"),
+                         selected = c("Has Diabetes", "No Diabetes")),
+      selectInput("facet_by", "Facet By:", choices = c("AgeGroup", "BMI_Category", "GenHlthCat"))
+    ),
+    
+    mainPanel(
+      plotOutput("riskPlot"),
+      plotOutput("propPlot"),
+      verbatimTextOutput("summaryText")
+    )
+  )
+)
+
+server <- function(input, output) {
+  filtered_data <- reactive({
+    selected_ages <- age_levels[input$ageBracketRange[1]:input$ageBracketRange[2]]
+    
+    df %>%
+      filter(
+        MentHlthCat == input$mental,
+        PhysHlthCat == input$physical,
+        AgeGroup %in% selected_ages,
+        if (input$sex != "Both") Sex == input$sex else TRUE
+      )
+  })
+  
+  output$riskPlot <- renderPlot({
+    summary_data <- filtered_data() %>%
+      group_by(AgeGroup) %>%
+      summarise(DiabetesRate = mean(Diabetes_binary), .groups = "drop")
+    
+    ggplot(summary_data, aes(x = AgeGroup, y = DiabetesRate, group = 1)) +
+      geom_line(color = "#ff6961", size = 1.2) +
+      geom_point(color = "black", size = 3, shape = 21, fill = "#ff6961") +
+      scale_y_continuous(labels = scales::percent_format()) +
+      labs(
+        title = "Diabetes Rate Across Age Groups",
+        subtitle = paste("Mental:", input$mental, "| Physical:", input$physical, "| Sex:", input$sex),
+        x = "Age Group",
+        y = "Diabetes Rate"
+      ) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+  
+  output$propPlot <- renderPlot({
+    filtered_data() %>%
+      count(.data[[input$facet_by]], Diabetes_binary) %>%
+      group_by(.data[[input$facet_by]]) %>%
+      mutate(prop = n / sum(n)) %>%
+      ggplot(aes(x = .data[[input$facet_by]], y = prop, fill = factor(Diabetes_binary))) +
+      geom_bar(stat = "identity", position = "fill") +
+      scale_y_continuous(labels = scales::percent_format()) +
+      labs(title = paste("Proportion of Diabetes by", input$facet_by),
+           x = input$facet_by,
+           y = "Proportion",
+           fill = "Diabetes Status") +
+      theme_minimal()
+  })
+  
+  output$summaryText <- renderPrint({
+    data <- filtered_data()
+    rate <- mean(data$Diabetes_binary, na.rm = TRUE)
+    paste0("Filtered Dataset Size: ", nrow(data),
+           "\nAverage Diabetes Rate: ", round(rate * 100, 1), "%")
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+## Visualization 8
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+df$risk_score <- scale(df$GenHlth) +                   
+  scale(df$HighBP) +                   
+  scale(df$BMI) +                   
+  scale(df$DiffWalk) +                   
+  scale(as.numeric(df$AgeGroup))  
+
+df$risk_bin <- cut(df$risk_score, 
+                   breaks = quantile(df$risk_score, probs = seq(0, 1, 0.2), na.rm = TRUE),
+                   labels = c("Very Low", "Low", "Medium", "High", "Very High"),
+                   include.lowest = TRUE) 
+
+risk_summary <- df %>%   
+  group_by(risk_bin) %>%   
+  summarise(DiabetesRate = mean(Diabetes_binary, na.rm = TRUE))  
+
+ggplot(risk_summary, aes(x = risk_bin, y = DiabetesRate)) +   
+  geom_segment(aes(x = risk_bin, xend = risk_bin, y = 0, yend = DiabetesRate), 
+               color = "#ff6961", linewidth = 1.2) +   # 👈 fixed here
+  geom_point(size = 4, shape = 21, fill = "#ff6961", color = "black", stroke = 1.2) +   
+  scale_y_continuous(labels = scales::percent_format()) +   
+  labs(
+    title = "Diabetes Rate by Composite Risk Group",     
+    x = "Composite Risk Category",     
+    y = "Diabetes Rate"   
+  ) +   
+  theme_minimal() +   
+  theme(
+    axis.text.x = element_text(size = 12),         
+    axis.title = element_text(size = 14),         
+    plot.title = element_text(size = 16, face = "bold")
+  )
+
+```
+
